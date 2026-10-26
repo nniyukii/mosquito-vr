@@ -1,329 +1,660 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mosquito VR Thermal Vision Experience</title>
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-    html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background-color: #000;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      user-select: none;
-    }
-    #canvas-container {
-      width: 100vw;
-      height: 100vh;
-      display: block;
-    }
-    /* HUD Overlay Info */
-    #ui-overlay {
-      position: absolute;
-      top: 20px;
-      left: 20px;
-      color: #00ffaa;
-      font-family: monospace;
-      text-shadow: 0 0 8px rgba(0, 255, 170, 0.6);
-      pointer-events: none;
-      z-index: 10;
-      background: rgba(0, 15, 10, 0.65);
-      padding: 15px 20px;
-      border-radius: 8px;
-      border: 1px solid rgba(0, 255, 170, 0.3);
-      max-width: 320px;
-    }
-    #ui-overlay h1 {
-      font-size: 1.1rem;
-      margin-bottom: 6px;
-      letter-spacing: 1px;
-      color: #ffffff;
-      text-transform: uppercase;
-    }
-    #ui-overlay p {
-      font-size: 0.8rem;
-      color: #88ccbb;
-      margin-bottom: 10px;
-      line-height: 1.3;
-    }
-    .hud-stat {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.85rem;
-      margin-top: 4px;
-    }
-    .hud-label {
-      color: #66aaaa;
-    }
-    .hud-value {
-      font-weight: bold;
-      color: #ffcc00;
-    }
-
-    /* VR BUTTON STYLING */
-    #VRButton {
-      position: absolute !important;
-      bottom: 25px !important;
-      left: 50% !important;
-      transform: translateX(-50%) !important;
-      padding: 14px 28px !important;
-      border: 2px solid #00ffaa !important;
-      border-radius: 30px !important;
-      background: rgba(0, 30, 20, 0.9) !important;
-      color: #00ffaa !important;
-      font-family: monospace !important;
-      font-size: 14px !important;
-      font-weight: bold !important;
-      letter-spacing: 1px !important;
-      text-transform: uppercase !important;
-      box-shadow: 0 0 20px rgba(0, 255, 170, 0.5) !important;
-      transition: all 0.2s ease !important;
-      z-index: 1000 !important;
-      cursor: pointer;
-    }
-    #VRButton:hover {
-      background: #00ffaa !important;
-      color: #000000 !important;
-      box-shadow: 0 0 30px rgba(0, 255, 170, 0.9) !important;
-    }
-  </style>
-  <!-- Three.js Engine -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mosquito Thermal Vision VR</title>
+    <!-- Tailwind CSS for UI controls -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            user-select: none;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        input[type=range] {
+            accent-color: #10b981;
+        }
+    </style>
 </head>
-<body>
-  <div id="canvas-container"></div>
+<body class="text-slate-100 flex h-screen w-screen overflow-hidden bg-black">
 
-  <!-- HUD Overlay Info -->
-  <div id="ui-overlay">
-    <h1>Mosquito Thermal VR</h1>
-    <p>Meta Quest 2 Real-Time Passthrough Thermal Vision.</p>
-    <div class="hud-stat">
-      <span class="hud-label">Palette:</span>
-      <span class="hud-value" id="vision-mode-text">FLIR Ironbow IR</span>
-    </div>
-    <div class="hud-stat">
-      <span class="hud-label">Status:</span>
-      <span class="hud-value" id="camera-status-text">Checking WebXR...</span>
-    </div>
-  </div>
+    <!-- Webcam Source (Hidden) -->
+    <video id="webcam" autoplay playsinline muted class="hidden"></video>
 
-  <script>
-    /**
-     * THREE.JS MOSQUITO WEBXR THERMAL PASSTHROUGH ENGINE
-     * Optimized for Meta Quest 2 Oculus Browser
-     */
-    let scene, camera, renderer, cameraGroup;
-    let postScene, postCamera, thermalShaderMaterial, renderTarget;
-    let clock = new THREE.Clock();
+    <!-- Main Canvas WebGL Container -->
+    <div id="canvas-container" class="relative w-full h-full"></div>
 
-    const cameraStatusText = document.getElementById('camera-status-text');
-
-    init();
-    setupThermalPostProcessing();
-    setupQuestVRButton();
-
-    renderer.setAnimationLoop(renderLoop);
-
-    function init() {
-      const container = document.getElementById('canvas-container');
-
-      scene = new THREE.Scene();
-
-      camera = new THREE.PerspectiveCamera(
-        75,
-        window.innerWidth / window.innerHeight,
-        0.01,
-        50
-      );
-
-      cameraGroup = new THREE.Group();
-      cameraGroup.position.set(0, 1.2, 0);
-      cameraGroup.add(camera);
-      scene.add(cameraGroup);
-
-      // WebGL Renderer Setup (Alpha enabled for WebXR Passthrough)
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setClearColor(0x000000, 0.0);
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.xr.enabled = true;
-      container.appendChild(renderer.domElement);
-
-      window.addEventListener('resize', onWindowResize);
-    }
-
-    // --- THERMAL INFRARED SHADER PIPELINE ---
-    function setupThermalPostProcessing() {
-      renderTarget = new THREE.WebGLRenderTarget(
-        window.innerWidth,
-        window.innerHeight
-      );
-
-      thermalShaderMaterial = new THREE.ShaderMaterial({
-        uniforms: {
-          tDiffuse: { value: null },
-          time: { value: 0.0 },
-          noiseIntensity: { value: 0.04 },
-          contrastBoost: { value: 1.5 }
-        },
-        vertexShader: `
-          varying vec2 vUv;
-          void main() {
-            vUv = uv;
-            gl_Position = vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: `
-          uniform sampler2D tDiffuse;
-          uniform float time;
-          uniform float noiseIntensity;
-          uniform float contrastBoost;
-          varying vec2 vUv;
-
-          float random(vec2 st) {
-            return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
-          }
-
-          // Authentic FLIR Ironbow Thermal Spectrum
-          vec3 computeThermalPalette(float val) {
-            val = clamp(val, 0.0, 1.0);
-            vec3 cCold    = vec3(0.02, 0.01, 0.12); // Deep Indigo Background
-            vec3 cLow     = vec3(0.20, 0.02, 0.50); // Violet
-            vec3 cMid     = vec3(0.75, 0.05, 0.35); // Crimson Magenta
-            vec3 cWarm    = vec3(0.98, 0.38, 0.00); // Amber Orange
-            vec3 cHot     = vec3(1.00, 0.90, 0.10); // Gold Yellow
-            vec3 cExtreme = vec3(1.00, 1.00, 1.00); // White Hot Core
-
-            if (val < 0.20) return mix(cCold, cLow, val / 0.20);
-            if (val < 0.45) return mix(cLow, cMid, (val - 0.20) / 0.25);
-            if (val < 0.70) return mix(cMid, cWarm, (val - 0.45) / 0.25);
-            if (val < 0.88) return mix(cWarm, cHot, (val - 0.70) / 0.18);
-            return mix(cHot, cExtreme, (val - 0.88) / 0.12);
-          }
-
-          void main() {
-            vec4 sceneColor = texture2D(tDiffuse, vUv);
+    <!-- Start Camera Overlay (Crucial for Meta Quest permission policies) -->
+    <div id="permission-overlay" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
+        <div class="glass-panel p-6 md:p-8 rounded-3xl max-w-md w-full text-center space-y-6 border border-emerald-500/30 shadow-2xl">
+            <div class="w-16 h-16 bg-emerald-500/10 border border-emerald-500/40 rounded-2xl flex items-center justify-center mx-auto text-emerald-400">
+                <i data-lucide="eye" class="w-8 h-8"></i>
+            </div>
             
-            // Generate dynamic luminance pattern for thermal simulation
-            float luminance = dot(sceneColor.rgb, vec3(0.299, 0.587, 0.114));
-            
-            // Add subtle animated thermal gradient wave across view
-            float thermalWave = sin(vUv.y * 3.0 + time * 0.5) * 0.15 + 0.45;
-            luminance = clamp(mix(luminance, thermalWave, 0.4) * contrastBoost, 0.0, 1.0);
+            <div class="space-y-2">
+                <h2 class="text-xl font-bold tracking-tight text-white">Culicidae Vision VR</h2>
+                <p class="text-xs text-slate-300 leading-relaxed">
+                    Meta Quest Browser requires user interaction to request Passthrough Camera access. Please click below and grant camera permissions when prompted.
+                </p>
+            </div>
 
-            vec3 thermalColor = computeThermalPalette(luminance);
+            <div class="space-y-3">
+                <button id="start-cam-btn" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-emerald-500/20 transition flex items-center justify-center space-x-2 text-sm">
+                    <i data-lucide="camera" class="w-4 h-4"></i>
+                    <span>Enable Quest Camera Vision</span>
+                </button>
+                <button id="use-simulated-btn" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium py-2.5 px-4 rounded-xl text-xs transition border border-slate-700">
+                    Use Procedural Thermal Test Generator
+                </button>
+            </div>
 
-            // Insect CRT scanline matrix
-            float scanline = sin(vUv.y * 420.0 + time * 4.0) * 0.03;
-            thermalColor += scanline;
+            <div id="quest-help" class="hidden text-left bg-rose-950/40 border border-rose-800/60 rounded-xl p-3 text-[11px] text-rose-200 space-y-1">
+                <p class="font-bold text-rose-300 flex items-center gap-1">
+                    <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i> Camera Access Denied
+                </p>
+                <p>1. Tap the URL bar padlock/settings icon in Quest Browser.</p>
+                <p>2. Allow Camera permissions for this page.</p>
+                <p>3. Refresh the page and try again.</p>
+            </div>
+        </div>
+    </div>
 
-            // Sensor noise grain
-            float n = (random(vUv + time * 0.02) - 0.5) * noiseIntensity;
-            thermalColor += n;
+    <!-- UI Overlay Controls -->
+    <div id="ui-overlay" class="absolute inset-0 pointer-events-none p-4 md:p-6 flex flex-col justify-between z-10">
+        <!-- Top Header -->
+        <div class="flex items-center justify-between pointer-events-auto">
+            <div class="glass-panel px-4 py-2.5 rounded-xl flex items-center space-x-3 shadow-lg">
+                <div class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+                <h1 class="font-bold text-sm md:text-base tracking-wide text-emerald-400 uppercase">
+                    Culicidae Vision Lab <span class="text-xs text-slate-400 font-normal border-l border-slate-700 ml-2 pl-2">VR / Passthrough</span>
+                </h1>
+            </div>
 
-            // Mosquito lens vignetting
-            float dist = distance(vUv, vec2(0.5));
-            thermalColor *= smoothstep(0.82, 0.15, dist);
+            <!-- Header Action Buttons -->
+            <div class="flex items-center space-x-2">
+                <button id="toggle-camera-btn" class="glass-panel hover:bg-slate-800 text-slate-200 px-3 py-2 rounded-xl text-xs font-semibold flex items-center space-x-2 transition border border-slate-700">
+                    <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">Switch Sensor</span>
+                </button>
+                <button id="vr-btn" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold px-4 py-2 rounded-xl text-xs md:text-sm flex items-center space-x-2 shadow-lg shadow-emerald-950/50 transition">
+                    <i data-lucide="glasses" class="w-4 h-4"></i>
+                    <span>ENTER VR MODE</span>
+                </button>
+            </div>
+        </div>
 
-            gl_FragColor = vec4(thermalColor, 0.88);
-          }
-        `,
-        depthTest: false,
-        depthWrite: false,
-        transparent: true
-      });
+        <!-- Notification Banner / Instructions -->
+        <div id="status-message" class="self-center glass-panel px-6 py-2.5 rounded-2xl text-center max-w-md shadow-2xl transition-all duration-300 pointer-events-auto">
+            <p class="text-xs text-slate-300 flex items-center justify-center gap-2">
+                <i data-lucide="info" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+                <span id="status-text">Ready to launch camera feed...</span>
+            </p>
+        </div>
 
-      postScene = new THREE.Scene();
-      postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-      const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), thermalShaderMaterial);
-      postScene.add(quad);
-    }
+        <!-- Bottom Control Bar -->
+        <div class="glass-panel rounded-2xl p-4 md:p-5 max-w-2xl w-full mx-auto pointer-events-auto shadow-2xl border border-slate-800">
+            <div class="flex items-center justify-between mb-4 border-b border-slate-800/80 pb-3">
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="sliders" class="w-4 h-4 text-emerald-400"></i>
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-300">Compound Vision Parameters</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button id="preset-mosquito" class="text-[10px] px-2.5 py-1 rounded-lg bg-emerald-950/80 text-emerald-300 border border-emerald-800 hover:bg-emerald-900 transition">Mosquito</button>
+                    <button id="preset-predator" class="text-[10px] px-2.5 py-1 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700 hover:bg-slate-700 transition">Full Thermal</button>
+                    <button id="preset-compound" class="text-[10px] px-2.5 py-1 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700 hover:bg-slate-700 transition">Ommatidia Only</button>
+                </div>
+            </div>
 
-    // --- META QUEST 2 PASSTHROUGH WEBXR BUTTON ---
-    function setupQuestVRButton() {
-      const button = document.createElement('button');
-      button.id = 'VRButton';
-      button.textContent = 'ENTER PASSTHROUGH VR';
+            <!-- Controls Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+                <!-- Camera Source Dropdown -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-slate-400">
+                        <label for="select-camera">Camera Sensor</label>
+                    </div>
+                    <select id="select-camera" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 focus:outline-none focus:border-emerald-500">
+                        <option value="">Detecting Devices...</option>
+                    </select>
+                </div>
 
-      if ('xr' in navigator) {
-        navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-          if (supported) {
-            cameraStatusText.innerText = 'Passthrough Ready (immersive-ar)';
-            cameraStatusText.style.color = '#00ffaa';
-            button.addEventListener('click', onEnterAR);
-          } else {
-            navigator.xr.isSessionSupported('immersive-vr').then((vrSupported) => {
-              if (vrSupported) {
-                button.textContent = 'ENTER VR MODE';
-                button.addEventListener('click', onEnterVR);
-                cameraStatusText.innerText = 'VR Mode Ready';
-              } else {
-                button.textContent = 'WEBXR NOT SUPPORTED';
-                button.disabled = true;
-                cameraStatusText.innerText = 'WebXR Unsupported';
-              }
+                <!-- Eye Mosaic Resolution -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-slate-400">
+                        <label for="slider-hex">Ommatidia Density</label>
+                        <span id="val-hex" class="font-mono text-emerald-400">120</span>
+                    </div>
+                    <input type="range" id="slider-hex" min="20" max="300" value="120" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                </div>
+
+                <!-- Thermal Sensitivity -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-slate-400">
+                        <label for="slider-thermal">Heat Contrast</label>
+                        <span id="val-thermal" class="font-mono text-emerald-400">1.8</span>
+                    </div>
+                    <input type="range" id="slider-thermal" min="0.5" max="4.0" step="0.1" value="1.8" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                </div>
+
+                <!-- CO2 / Infrared Glow Spectrum -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-slate-400">
+                        <label for="slider-glow">IR / Heat Spectrum</label>
+                        <span id="val-glow" class="font-mono text-emerald-400">0.85</span>
+                    </div>
+                    <input type="range" id="slider-glow" min="0.0" max="2.0" step="0.05" value="0.85" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                </div>
+
+                <!-- Motion Flicker Sensitivity -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-slate-400">
+                        <label for="slider-motion">Motion Flicker</label>
+                        <span id="val-motion" class="font-mono text-emerald-400">1.2</span>
+                    </div>
+                    <input type="range" id="slider-motion" min="0.0" max="3.0" step="0.1" value="1.2" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                </div>
+
+                <!-- Peripheral Curvature Distortion -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-slate-400">
+                        <label for="slider-fisheye">Eye Curvature</label>
+                        <span id="val-fisheye" class="font-mono text-emerald-400">0.35</span>
+                    </div>
+                    <input type="range" id="slider-fisheye" min="0.0" max="1.0" step="0.05" value="0.35" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                </div>
+
+                <!-- Color Palette Map Dropdown -->
+                <div class="space-y-1 col-span-1 sm:col-span-2 md:col-span-3">
+                    <div class="flex justify-between text-slate-400">
+                        <label for="select-palette">Thermal Map</label>
+                    </div>
+                    <select id="select-palette" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 focus:outline-none focus:border-emerald-500">
+                        <option value="0">Mosquito Heat Gradient (Ironbow)</option>
+                        <option value="1">Carbon Dioxide Hunter (Green/Red)</option>
+                        <option value="2">Rainbow High-Heat</option>
+                        <option value="3">Monochrome Infrared</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Logic & Shaders -->
+    <script>
+        lucide.createIcons();
+
+        const container = document.getElementById('canvas-container');
+        const video = document.getElementById('webcam');
+        const statusText = document.getElementById('status-text');
+        const permissionOverlay = document.getElementById('permission-overlay');
+        const questHelp = document.getElementById('quest-help');
+
+        let renderer, scene, camera, planeMesh;
+        let videoTexture, previousVideoTexture;
+        let prevCanvas, prevCtx;
+        let customMaterial;
+        let selectedDeviceId = null;
+        let availableVideoDevices = [];
+        let currentStream = null;
+        let isSimulatedMode = false;
+
+        // Procedural thermal canvas fallback
+        let simCanvas, simCtx;
+
+        const uniforms = {
+            u_time: { value: 0 },
+            u_texture: { value: null },
+            u_prevTexture: { value: null },
+            u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+            u_hexDensity: { value: 120.0 },
+            u_thermalIntensity: { value: 1.8 },
+            u_heatGlow: { value: 0.85 },
+            u_motionSensitivity: { value: 1.2 },
+            u_distortion: { value: 0.35 },
+            u_palette: { value: 0 }
+        };
+
+        const vertexShader = `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = vec4(position, 1.0);
+            }
+        `;
+
+        const fragmentShader = `
+            uniform float u_time;
+            uniform sampler2D u_texture;
+            uniform sampler2D u_prevTexture;
+            uniform vec2 u_resolution;
+            uniform float u_hexDensity;
+            uniform float u_thermalIntensity;
+            uniform float u_heatGlow;
+            uniform float u_motionSensitivity;
+            uniform float u_distortion;
+            uniform int u_palette;
+
+            varying vec2 vUv;
+
+            vec4 getHexGrid(vec2 uv, float density) {
+                vec2 aspect = vec2(u_resolution.x / u_resolution.y, 1.0);
+                vec2 st = uv * aspect * density;
+                
+                vec2 grid = floor(st);
+                vec2 f = fract(st);
+
+                vec2 q = abs(f - 0.5);
+                float d = max(q.x * 1.5 + q.y * 0.866025, q.y * 1.73205);
+                
+                vec2 hexCenter = (grid + 0.5) / (aspect * density);
+                return vec4(hexCenter, d, length(q));
+            }
+
+            vec2 applyFisheye(vec2 uv, float strength) {
+                vec2 p = uv - 0.5;
+                float r = length(p);
+                if (strength <= 0.001) return uv;
+                float bind = 0.707106;
+                float factor = 1.0;
+                if (r < bind) {
+                    factor = pow(r / bind, strength * 2.0);
+                }
+                return 0.5 + p * (factor > 0.0 ? factor / (r / bind) : 1.0);
+            }
+
+            vec3 getThermalColor(float val, int palette) {
+                val = clamp(val, 0.0, 1.0);
+                
+                if (palette == 0) {
+                    vec3 c0 = vec3(0.05, 0.02, 0.20);
+                    vec3 c1 = vec3(0.10, 0.40, 0.80);
+                    vec3 c2 = vec3(0.10, 0.80, 0.30);
+                    vec3 c3 = vec3(0.95, 0.70, 0.10);
+                    vec3 c4 = vec3(1.00, 0.15, 0.05);
+                    vec3 c5 = vec3(1.00, 1.00, 0.90);
+
+                    if (val < 0.2) return mix(c0, c1, val * 5.0);
+                    if (val < 0.4) return mix(c1, c2, (val - 0.2) * 5.0);
+                    if (val < 0.6) return mix(c2, c3, (val - 0.4) * 5.0);
+                    if (val < 0.8) return mix(c3, c4, (val - 0.6) * 5.0);
+                    return mix(c4, c5, (val - 0.8) * 5.0);
+                } 
+                else if (palette == 1) {
+                    vec3 cold = vec3(0.02, 0.10, 0.15);
+                    vec3 mid  = vec3(0.20, 0.90, 0.40);
+                    vec3 hot  = vec3(1.00, 0.10, 0.30);
+                    if (val < 0.5) return mix(cold, mid, val * 2.0);
+                    return mix(mid, hot, (val - 0.5) * 2.0);
+                }
+                else if (palette == 2) {
+                    return 0.5 + 0.5 * cos(6.28318 * (val * vec3(1.0, 0.6, 0.3) + vec3(0.5, 0.15, 0.0)));
+                }
+                else {
+                    return vec3(pow(val, 1.2));
+                }
+            }
+
+            void main() {
+                vec2 distortedUv = applyFisheye(vUv, u_distortion);
+                vec4 hexInfo = getHexGrid(distortedUv, u_hexDensity);
+                vec2 sampleUv = hexInfo.xy;
+
+                float hexEdge = smoothstep(0.48, 0.5, hexInfo.z);
+
+                vec4 texColor = texture2D(u_texture, sampleUv);
+                vec4 prevColor = texture2D(u_prevTexture, sampleUv);
+
+                float luminance = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+                float warmDelta = (texColor.r * 1.3 - texColor.b * 0.8);
+                float heatValue = clamp((luminance * 0.4 + warmDelta * 0.6) * u_thermalIntensity, 0.0, 1.5);
+
+                float frameDiff = length(texColor.rgb - prevColor.rgb);
+                float motionPulse = smoothstep(0.05, 0.3, frameDiff) * u_motionSensitivity;
+
+                heatValue += motionPulse * 0.8 + (sin(u_time * 4.0) * 0.03 * u_heatGlow);
+
+                vec3 finalColor = getThermalColor(heatValue, u_palette);
+                finalColor *= (1.0 - hexEdge * 0.45);
+
+                float distFromCenter = length(vUv - 0.5);
+                finalColor *= smoothstep(0.75, 0.2, distFromCenter);
+
+                if (motionPulse > 0.3) {
+                    finalColor += vec3(0.2, 0.8, 0.4) * motionPulse * 0.5;
+                }
+
+                gl_FragColor = vec4(finalColor, 1.0);
+            }
+        `;
+
+        function initScene() {
+            scene = new THREE.Scene();
+            camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.xr.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            prevCanvas = document.createElement('canvas');
+            prevCanvas.width = 256;
+            prevCanvas.height = 256;
+            prevCtx = prevCanvas.getContext('2d');
+
+            // Setup simulated generator canvas
+            simCanvas = document.createElement('canvas');
+            simCanvas.width = 512;
+            simCanvas.height = 512;
+            simCtx = simCanvas.getContext('2d');
+
+            const placeholder = document.createElement('canvas');
+            placeholder.width = 2;
+            placeholder.height = 2;
+            videoTexture = new THREE.CanvasTexture(placeholder);
+            previousVideoTexture = new THREE.CanvasTexture(placeholder);
+
+            uniforms.u_texture.value = videoTexture;
+            uniforms.u_prevTexture.value = previousVideoTexture;
+
+            const geometry = new THREE.PlaneGeometry(2, 2);
+            customMaterial = new THREE.ShaderMaterial({
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader,
+                uniforms: uniforms
             });
-          }
-        });
-      } else {
-        button.textContent = 'OPEN IN QUEST BROWSER';
-        cameraStatusText.innerText = 'Requires Oculus Browser';
-      }
 
-      document.body.appendChild(button);
-    }
+            planeMesh = new THREE.Mesh(geometry, customMaterial);
+            scene.add(planeMesh);
 
-    async function onEnterAR() {
-      const sessionInit = { requiredFeatures: [], optionalFeatures: ['dom-overlay'], domOverlay: { root: document.body } };
-      try {
-        const session = await navigator.xr.requestSession('immersive-ar', sessionInit);
-        renderer.xr.setReferenceSpaceType('local');
-        await renderer.xr.setSession(session);
-      } catch (e) {
-        console.warn('AR Request failed, falling back to VR mode', e);
-        onEnterVR();
-      }
-    }
+            window.addEventListener('resize', onWindowResize);
+            setupVR();
+        }
 
-    async function onEnterVR() {
-      const session = await navigator.xr.requestSession('immersive-vr');
-      renderer.xr.setReferenceSpaceType('local');
-      await renderer.xr.setSession(session);
-    }
+        async function initCameraDevices() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                availableVideoDevices = devices.filter(device => device.kind === 'videoinput');
 
-    // --- MAIN RENDER LOOP ---
-    function renderLoop() {
-      const elapsedTime = clock.getElapsedTime();
-      thermalShaderMaterial.uniforms.time.value = elapsedTime;
+                const selectCam = document.getElementById('select-camera');
+                selectCam.innerHTML = '';
 
-      if (renderer.xr.isPresenting) {
-        renderer.render(scene, camera);
-      } else {
-        renderer.setRenderTarget(renderTarget);
-        renderer.render(scene, camera);
+                if (availableVideoDevices.length === 0) {
+                    selectCam.innerHTML = '<option value="">Default Camera</option>';
+                    return;
+                }
 
-        thermalShaderMaterial.uniforms.tDiffuse.value = renderTarget.texture;
-        renderer.setRenderTarget(null);
-        renderer.render(postScene, postCamera);
-      }
-    }
+                let preferredDeviceId = null;
+                availableVideoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    const label = device.label || `Camera ${index + 1}`;
+                    option.textContent = label;
+                    selectCam.appendChild(option);
 
-    function onWindowResize() {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
+                    const lowerLabel = label.toLowerCase();
+                    if (lowerLabel.includes('environment') || lowerLabel.includes('back') || lowerLabel.includes('passthrough') || lowerLabel.includes('rear')) {
+                        preferredDeviceId = device.deviceId;
+                    }
+                });
 
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
+                if (preferredDeviceId) {
+                    selectedDeviceId = preferredDeviceId;
+                    selectCam.value = preferredDeviceId;
+                } else if (availableVideoDevices.length > 0) {
+                    selectedDeviceId = availableVideoDevices[availableVideoDevices.length - 1].deviceId;
+                    selectCam.value = selectedDeviceId;
+                }
+            } catch (err) {
+                console.warn("Could not enumerate camera devices:", err);
+            }
+        }
 
-      renderer.setSize(width, height);
-      renderTarget.setSize(width, height);
-    }
-  </script>
+        async function setupWebcam(deviceId = null) {
+            isSimulatedMode = false;
+            questHelp.classList.add('hidden');
+
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+
+            const targetDeviceId = deviceId || selectedDeviceId;
+
+            let constraints = targetDeviceId 
+                ? { video: { deviceId: { exact: targetDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }
+                : { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
+
+            try {
+                statusText.textContent = "Requesting Quest camera access...";
+                
+                try {
+                    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                } catch (firstErr) {
+                    currentStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                }
+
+                video.srcObject = currentStream;
+                await video.play();
+
+                videoTexture = new THREE.VideoTexture(video);
+                videoTexture.minFilter = THREE.LinearFilter;
+                videoTexture.magFilter = THREE.LinearFilter;
+                uniforms.u_texture.value = videoTexture;
+
+                await initCameraDevices();
+
+                permissionOverlay.classList.add('hidden');
+                statusText.textContent = "Mosquito Thermal Vision Active. Tap ENTER VR to present in headset.";
+            } catch (err) {
+                console.error("Camera access error:", err);
+                questHelp.classList.remove('hidden');
+                statusText.textContent = "Camera access denied. Enable permissions or use test generator.";
+            }
+        }
+
+        function startSimulatedThermal() {
+            isSimulatedMode = true;
+            permissionOverlay.classList.add('hidden');
+            statusText.textContent = "Running Procedural Thermal Simulator Mode";
+
+            videoTexture = new THREE.CanvasTexture(simCanvas);
+            uniforms.u_texture.value = videoTexture;
+        }
+
+        function drawProceduralThermal(time) {
+            const t = time * 0.002;
+            const w = simCanvas.width;
+            const h = simCanvas.height;
+
+            simCtx.fillStyle = '#050a15';
+            simCtx.fillRect(0, 0, w, h);
+
+            // Animated heat spots simulating human targets
+            for (let i = 0; i < 3; i++) {
+                const x = w/2 + Math.sin(t + i * 2.0) * (w * 0.25);
+                const y = h/2 + Math.cos(t * 1.5 + i) * (h * 0.2);
+                const radius = 60 + Math.sin(t * 3.0 + i) * 15;
+
+                const grad = simCtx.createRadialGradient(x, y, 5, x, y, radius);
+                grad.addColorStop(0, 'rgba(255, 230, 180, 1.0)');
+                grad.addColorStop(0.4, 'rgba(255, 80, 20, 0.8)');
+                grad.addColorStop(0.8, 'rgba(40, 180, 80, 0.3)');
+                grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+                simCtx.fillStyle = grad;
+                simCtx.beginPath();
+                simCtx.arc(x, y, radius, 0, Math.PI * 2);
+                simCtx.fill();
+            }
+
+            videoTexture.needsUpdate = true;
+        }
+
+        function setupVR() {
+            const vrBtn = document.getElementById('vr-btn');
+
+            if ('xr' in navigator) {
+                navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+                    if (supported) {
+                        vrBtn.addEventListener('click', () => {
+                            if (!renderer.xr.isPresenting) {
+                                navigator.xr.requestSession('immersive-vr', {
+                                    optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers']
+                                }).then((session) => {
+                                    renderer.xr.setSession(session);
+                                    statusText.textContent = "In VR Mode - Passthrough Active";
+                                });
+                            }
+                        });
+                    } else {
+                        vrBtn.textContent = "VR Unsupported";
+                    }
+                });
+            } else {
+                vrBtn.textContent = "WebXR Ready";
+            }
+        }
+
+        function onWindowResize() {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            uniforms.u_resolution.value.set(window.innerWidth, window.innerHeight);
+        }
+
+        let lastBufferUpdate = 0;
+        function updateMotionBuffer(time) {
+            if (time - lastBufferUpdate > 100) {
+                if (isSimulatedMode) {
+                    prevCtx.drawImage(simCanvas, 0, 0, prevCanvas.width, prevCanvas.height);
+                } else if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    prevCtx.drawImage(video, 0, 0, prevCanvas.width, prevCanvas.height);
+                }
+                
+                if (previousVideoTexture) previousVideoTexture.dispose();
+                previousVideoTexture = new THREE.CanvasTexture(prevCanvas);
+                uniforms.u_prevTexture.value = previousVideoTexture;
+                lastBufferUpdate = time;
+            }
+        }
+
+        function animate(time) {
+            renderer.setAnimationLoop((t) => {
+                const sec = t * 0.001;
+                uniforms.u_time.value = sec;
+
+                if (isSimulatedMode) {
+                    drawProceduralThermal(t);
+                }
+
+                updateMotionBuffer(t);
+
+                renderer.render(scene, camera);
+            });
+        }
+
+        function setupUIControls() {
+            document.getElementById('start-cam-btn').addEventListener('click', () => {
+                setupWebcam();
+            });
+
+            document.getElementById('use-simulated-btn').addEventListener('click', () => {
+                startSimulatedThermal();
+            });
+
+            const bindSlider = (id, uniformKey, displayId) => {
+                const slider = document.getElementById(id);
+                const display = document.getElementById(displayId);
+                slider.addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    uniforms[uniformKey].value = val;
+                    display.textContent = val;
+                });
+            };
+
+            bindSlider('slider-hex', 'u_hexDensity', 'val-hex');
+            bindSlider('slider-thermal', 'u_thermalIntensity', 'val-thermal');
+            bindSlider('slider-glow', 'u_heatGlow', 'val-glow');
+            bindSlider('slider-motion', 'u_motionSensitivity', 'val-motion');
+            bindSlider('slider-fisheye', 'u_distortion', 'val-fisheye');
+
+            document.getElementById('select-palette').addEventListener('change', (e) => {
+                uniforms.u_palette.value = parseInt(e.target.value, 10);
+            });
+
+            document.getElementById('select-camera').addEventListener('change', (e) => {
+                selectedDeviceId = e.target.value;
+                setupWebcam(selectedDeviceId);
+            });
+
+            document.getElementById('toggle-camera-btn').addEventListener('click', () => {
+                if (availableVideoDevices.length > 1) {
+                    const currentIndex = availableVideoDevices.findIndex(d => d.deviceId === selectedDeviceId);
+                    const nextIndex = (currentIndex + 1) % availableVideoDevices.length;
+                    selectedDeviceId = availableVideoDevices[nextIndex].deviceId;
+                    document.getElementById('select-camera').value = selectedDeviceId;
+                    setupWebcam(selectedDeviceId);
+                } else {
+                    setupWebcam();
+                }
+            });
+
+            document.getElementById('preset-mosquito').addEventListener('click', () => {
+                setPresetValues(120, 1.8, 0.85, 1.2, 0.35, 0);
+            });
+            document.getElementById('preset-predator').addEventListener('click', () => {
+                setPresetValues(40, 2.5, 1.5, 2.0, 0.1, 0);
+            });
+            document.getElementById('preset-compound').addEventListener('click', () => {
+                setPresetValues(220, 0.8, 0.2, 0.5, 0.6, 3);
+            });
+        }
+
+        function setPresetValues(hex, thermal, glow, motion, fisheye, palette) {
+            document.getElementById('slider-hex').value = hex;
+            document.getElementById('val-hex').textContent = hex;
+            uniforms.u_hexDensity.value = hex;
+
+            document.getElementById('slider-thermal').value = thermal;
+            document.getElementById('val-thermal').textContent = thermal;
+            uniforms.u_thermalIntensity.value = thermal;
+
+            document.getElementById('slider-glow').value = glow;
+            document.getElementById('val-glow').textContent = glow;
+            uniforms.u_heatGlow.value = glow;
+
+            document.getElementById('slider-motion').value = motion;
+            document.getElementById('val-motion').textContent = motion;
+            uniforms.u_motionSensitivity.value = motion;
+
+            document.getElementById('slider-fisheye').value = fisheye;
+            document.getElementById('val-fisheye').textContent = fisheye;
+            uniforms.u_distortion.value = fisheye;
+
+            document.getElementById('select-palette').value = palette;
+            uniforms.u_palette.value = palette;
+        }
+
+        window.onload = () => {
+            initScene();
+            setupUIControls();
+            animate(0);
+        };
+    </script>
 </body>
 </html>
