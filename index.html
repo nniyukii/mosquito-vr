@@ -317,45 +317,52 @@
             return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
           }
 
-          // Balanced Thermal Palette (Stops luminance overflow white-out)
+          // Authentic FLIR Ironbow Thermal Palette Ramp
           vec3 computeThermalPalette(float val) {
             val = clamp(val, 0.0, 1.0);
             
-            vec3 cCold    = vec3(0.01, 0.0, 0.12);  // Cold Void
-            vec3 cLow     = vec3(0.0, 0.2, 0.7);   // Cool Ambient (Blue)
-            vec3 cMid     = vec3(0.6, 0.0, 0.6);   // Warm Transition (Magenta)
-            vec3 cWarm    = vec3(0.95, 0.2, 0.0);  // High Heat (Red-Orange)
-            vec3 cHot     = vec3(1.0, 0.85, 0.0);  // Vein Core (Yellow)
-            vec3 cExtreme = vec3(1.0, 1.0, 1.0);   // Max Pulse Core (White)
+            // Standard FLIR Ironbow Keyframes:
+            // 0.0: Dark Navy/Black (Cold background)
+            // 0.2: Deep Indigo / Violet
+            // 0.45: Crimson Magenta / Warm Red
+            // 0.70: Bright Flame Orange
+            // 0.88: Gold / Electric Yellow
+            // 1.0: Pure Blinding White (Heat core)
+            vec3 cCold    = vec3(0.01, 0.01, 0.08); // Dark Navy Void
+            vec3 cLow     = vec3(0.18, 0.02, 0.45); // Deep Indigo
+            vec3 cMid     = vec3(0.72, 0.05, 0.35); // Crimson Magenta
+            vec3 cWarm    = vec3(0.95, 0.35, 0.00); // Flame Orange
+            vec3 cHot     = vec3(1.00, 0.88, 0.10); // Bright Gold Yellow
+            vec3 cExtreme = vec3(1.00, 1.00, 1.00); // White Hot Core
 
             if (val < 0.20) return mix(cCold, cLow, val / 0.20);
             if (val < 0.45) return mix(cLow, cMid, (val - 0.20) / 0.25);
             if (val < 0.70) return mix(cMid, cWarm, (val - 0.45) / 0.25);
-            if (val < 0.90) return mix(cWarm, cHot, (val - 0.70) / 0.20);
-            return mix(cHot, cExtreme, (val - 0.90) / 0.10);
+            if (val < 0.88) return mix(cWarm, cHot, (val - 0.70) / 0.18);
+            return mix(cHot, cExtreme, (val - 0.88) / 0.12);
           }
 
           void main() {
             vec4 sceneColor = texture2D(tDiffuse, vUv);
             
-            // Normalize brightness to avoid over-exposure white out
+            // Normalize brightness to map precisely into FLIR spectrum
             float luminance = dot(sceneColor.rgb, vec3(0.299, 0.587, 0.114));
-            luminance = clamp(luminance * 1.1, 0.0, 1.0);
+            luminance = clamp(luminance * 1.25, 0.0, 1.0);
 
-            // Apply Thermal Palette Mapping
+            // Map luminance through the FLIR Ironbow thermal lookup
             vec3 thermalColor = computeThermalPalette(luminance);
 
-            // Compound insect scanlines
-            float scanline = sin(vUv.y * 300.0 + time * 3.0) * 0.015;
+            // Thermal IR sensor horizontal scanlines
+            float scanline = sin(vUv.y * 360.0 + time * 4.0) * 0.02;
             thermalColor += scanline;
 
-            // Micro sensor noise grain
-            float n = (random(vUv + time * 0.01) - 0.5) * noiseIntensity;
+            // Micro sensor digital noise grain
+            float n = (random(vUv + time * 0.02) - 0.5) * noiseIntensity;
             thermalColor += n;
 
-            // Vignette eye border
+            // Compound insect lens vignetting
             float dist = distance(vUv, vec2(0.5));
-            thermalColor *= smoothstep(0.8, 0.2, dist);
+            thermalColor *= smoothstep(0.75, 0.25, dist);
 
             gl_FragColor = vec4(thermalColor, 1.0);
           }
