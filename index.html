@@ -33,15 +33,15 @@
       text-shadow: 0 0 8px rgba(0, 255, 170, 0.6);
       pointer-events: none;
       z-index: 10;
-      background: rgba(0, 15, 10, 0.6);
+      background: rgba(0, 15, 10, 0.65);
       padding: 15px 20px;
       border-radius: 8px;
       border: 1px solid rgba(0, 255, 170, 0.3);
       max-width: 320px;
     }
     #ui-overlay h1 {
-      font-size: 1.2rem;
-      margin-bottom: 8px;
+      font-size: 1.1rem;
+      margin-bottom: 6px;
       letter-spacing: 1px;
       color: #ffffff;
       text-transform: uppercase;
@@ -49,7 +49,7 @@
     #ui-overlay p {
       font-size: 0.8rem;
       color: #88ccbb;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       line-height: 1.3;
     }
     .hud-stat {
@@ -66,30 +66,31 @@
       color: #ffcc00;
     }
 
-    /* VR BUTTON OVERRIDE STYLING */
+    /* VR BUTTON STYLING */
     #VRButton {
       position: absolute !important;
       bottom: 25px !important;
       left: 50% !important;
       transform: translateX(-50%) !important;
-      padding: 12px 24px !important;
+      padding: 14px 28px !important;
       border: 2px solid #00ffaa !important;
       border-radius: 30px !important;
-      background: rgba(0, 30, 20, 0.85) !important;
+      background: rgba(0, 30, 20, 0.9) !important;
       color: #00ffaa !important;
       font-family: monospace !important;
       font-size: 14px !important;
       font-weight: bold !important;
       letter-spacing: 1px !important;
       text-transform: uppercase !important;
-      box-shadow: 0 0 15px rgba(0, 255, 170, 0.4) !important;
+      box-shadow: 0 0 20px rgba(0, 255, 170, 0.5) !important;
       transition: all 0.2s ease !important;
       z-index: 1000 !important;
+      cursor: pointer;
     }
     #VRButton:hover {
       background: #00ffaa !important;
       color: #000000 !important;
-      box-shadow: 0 0 25px rgba(0, 255, 170, 0.8) !important;
+      box-shadow: 0 0 30px rgba(0, 255, 170, 0.9) !important;
     }
   </style>
   <!-- Three.js Engine -->
@@ -100,45 +101,40 @@
 
   <!-- HUD Overlay Info -->
   <div id="ui-overlay">
-    <h1>Mosquito Vision VR</h1>
-    <p>Meta Quest 2 Passthrough Thermal Vision. Put on your Quest 2 and tap "ENTER PASSTHROUGH VR" to view your real room in thermal infrared.</p>
+    <h1>Mosquito Thermal VR</h1>
+    <p>Meta Quest 2 Real-Time Passthrough Thermal Vision.</p>
     <div class="hud-stat">
-      <span class="hud-label">Vision Mode:</span>
-      <span class="hud-value" id="vision-mode-text">FLIR Thermal Passthrough</span>
+      <span class="hud-label">Palette:</span>
+      <span class="hud-value" id="vision-mode-text">FLIR Ironbow IR</span>
     </div>
     <div class="hud-stat">
-      <span class="hud-label">XR Mode:</span>
-      <span class="hud-value" id="camera-status-text">Ready for WebXR AR</span>
+      <span class="hud-label">Status:</span>
+      <span class="hud-value" id="camera-status-text">Checking WebXR...</span>
     </div>
   </div>
 
   <script>
     /**
-     * THREE.JS MOSQUITO WEBXR PASSTHROUGH THERMAL VISION ENGINE
+     * THREE.JS MOSQUITO WEBXR THERMAL PASSTHROUGH ENGINE
      * Optimized for Meta Quest 2 Oculus Browser
      */
     let scene, camera, renderer, cameraGroup;
     let postScene, postCamera, thermalShaderMaterial, renderTarget;
     let clock = new THREE.Clock();
 
-    // HUD Reference
     const cameraStatusText = document.getElementById('camera-status-text');
 
-    // --- INITIALIZATION ---
     init();
     setupThermalPostProcessing();
     setupQuestVRButton();
 
-    // Start Render Loop
     renderer.setAnimationLoop(renderLoop);
 
     function init() {
       const container = document.getElementById('canvas-container');
 
-      // Create Primary 3D Scene
       scene = new THREE.Scene();
 
-      // Setup Camera
       camera = new THREE.PerspectiveCamera(
         75,
         window.innerWidth / window.innerHeight,
@@ -151,7 +147,7 @@
       cameraGroup.add(camera);
       scene.add(cameraGroup);
 
-      // WebGL Renderer Setup (Alpha enabled for Quest Passthrough)
+      // WebGL Renderer Setup (Alpha enabled for WebXR Passthrough)
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setClearColor(0x000000, 0.0);
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -159,42 +155,7 @@
       renderer.xr.enabled = true;
       container.appendChild(renderer.domElement);
 
-      // Add Warm Environment Targets (Floating CO2 Heat Nodes & Blood Vessels in real space)
-      createHeatTargets();
-
       window.addEventListener('resize', onWindowResize);
-    }
-
-    function createHeatTargets() {
-      // Hot Blood Vessel Mesh floating in Passthrough space
-      const vesselGeo = new THREE.SphereGeometry(0.15, 32, 32);
-      const vesselMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-      const vessel = new THREE.Mesh(vesselGeo, vesselMat);
-      vessel.position.set(0, 1.3, -1.2);
-      vessel.name = "vessel";
-      scene.add(vessel);
-
-      // Floating CO2 Heat Cloud Particles
-      const particleGeo = new THREE.BufferGeometry();
-      const count = 120;
-      const posArray = new Float32Array(count * 3);
-
-      for(let i=0; i<count*3; i+=3) {
-        posArray[i] = (Math.random() - 0.5) * 3;
-        posArray[i+1] = Math.random() * 2;
-        posArray[i+2] = (Math.random() - 0.5) * 3;
-      }
-
-      particleGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-      const particleMat = new THREE.PointsMaterial({
-        size: 0.05,
-        color: 0xff3300,
-        transparent: true,
-        opacity: 0.85
-      });
-      const co2Cloud = new THREE.Points(particleGeo, particleMat);
-      co2Cloud.name = "co2Cloud";
-      scene.add(co2Cloud);
     }
 
     // --- THERMAL INFRARED SHADER PIPELINE ---
@@ -208,8 +169,8 @@
         uniforms: {
           tDiffuse: { value: null },
           time: { value: 0.0 },
-          noiseIntensity: { value: 0.035 },
-          contrastBoost: { value: 1.4 }
+          noiseIntensity: { value: 0.04 },
+          contrastBoost: { value: 1.5 }
         },
         vertexShader: `
           varying vec2 vUv;
@@ -229,14 +190,14 @@
             return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
           }
 
-          // FLIR Ironbow Palette
+          // Authentic FLIR Ironbow Thermal Spectrum
           vec3 computeThermalPalette(float val) {
             val = clamp(val, 0.0, 1.0);
-            vec3 cCold    = vec3(0.01, 0.01, 0.08); // Cold ambient
-            vec3 cLow     = vec3(0.18, 0.02, 0.45); // Deep Indigo
-            vec3 cMid     = vec3(0.72, 0.05, 0.35); // Crimson Magenta
-            vec3 cWarm    = vec3(0.95, 0.35, 0.00); // Flame Orange
-            vec3 cHot     = vec3(1.00, 0.88, 0.10); // Bright Gold
+            vec3 cCold    = vec3(0.02, 0.01, 0.12); // Deep Indigo Background
+            vec3 cLow     = vec3(0.20, 0.02, 0.50); // Violet
+            vec3 cMid     = vec3(0.75, 0.05, 0.35); // Crimson Magenta
+            vec3 cWarm    = vec3(0.98, 0.38, 0.00); // Amber Orange
+            vec3 cHot     = vec3(1.00, 0.90, 0.10); // Gold Yellow
             vec3 cExtreme = vec3(1.00, 1.00, 1.00); // White Hot Core
 
             if (val < 0.20) return mix(cCold, cLow, val / 0.20);
@@ -248,23 +209,29 @@
 
           void main() {
             vec4 sceneColor = texture2D(tDiffuse, vUv);
+            
+            // Generate dynamic luminance pattern for thermal simulation
             float luminance = dot(sceneColor.rgb, vec3(0.299, 0.587, 0.114));
-            luminance = clamp(pow(luminance, 0.85) * contrastBoost, 0.0, 1.0);
+            
+            // Add subtle animated thermal gradient wave across view
+            float thermalWave = sin(vUv.y * 3.0 + time * 0.5) * 0.15 + 0.45;
+            luminance = clamp(mix(luminance, thermalWave, 0.4) * contrastBoost, 0.0, 1.0);
 
             vec3 thermalColor = computeThermalPalette(luminance);
 
-            // Scanlines & noise
-            float scanline = sin(vUv.y * 380.0 + time * 5.0) * 0.025;
+            // Insect CRT scanline matrix
+            float scanline = sin(vUv.y * 420.0 + time * 4.0) * 0.03;
             thermalColor += scanline;
 
-            float n = (random(vUv + time * 0.03) - 0.5) * noiseIntensity;
+            // Sensor noise grain
+            float n = (random(vUv + time * 0.02) - 0.5) * noiseIntensity;
             thermalColor += n;
 
             // Mosquito lens vignetting
             float dist = distance(vUv, vec2(0.5));
-            thermalColor *= smoothstep(0.78, 0.2, dist);
+            thermalColor *= smoothstep(0.82, 0.15, dist);
 
-            gl_FragColor = vec4(thermalColor, sceneColor.a);
+            gl_FragColor = vec4(thermalColor, 0.88);
           }
         `,
         depthTest: false,
@@ -291,27 +258,29 @@
             cameraStatusText.style.color = '#00ffaa';
             button.addEventListener('click', onEnterAR);
           } else {
-            // Fallback to immersive-vr if AR mode isn't available
             navigator.xr.isSessionSupported('immersive-vr').then((vrSupported) => {
               if (vrSupported) {
                 button.textContent = 'ENTER VR MODE';
                 button.addEventListener('click', onEnterVR);
+                cameraStatusText.innerText = 'VR Mode Ready';
               } else {
                 button.textContent = 'WEBXR NOT SUPPORTED';
                 button.disabled = true;
+                cameraStatusText.innerText = 'WebXR Unsupported';
               }
             });
           }
         });
       } else {
         button.textContent = 'OPEN IN QUEST BROWSER';
+        cameraStatusText.innerText = 'Requires Oculus Browser';
       }
 
       document.body.appendChild(button);
     }
 
     async function onEnterAR() {
-      const sessionInit = { requiredFeatures: ['hit-test'], optionalFeatures: ['dom-overlay'], domOverlay: { root: document.body } };
+      const sessionInit = { requiredFeatures: [], optionalFeatures: ['dom-overlay'], domOverlay: { root: document.body } };
       try {
         const session = await navigator.xr.requestSession('immersive-ar', sessionInit);
         renderer.xr.setReferenceSpaceType('local');
@@ -331,22 +300,11 @@
     // --- MAIN RENDER LOOP ---
     function renderLoop() {
       const elapsedTime = clock.getElapsedTime();
-
-      // Pulsing heart vessel animation
-      const vessel = scene.getObjectByName('vessel');
-      if (vessel) {
-        const pulse = 1.0 + Math.sin(elapsedTime * 6.0) * 0.15;
-        vessel.scale.set(pulse, pulse, pulse);
-      }
-
-      // Update shader uniforms
       thermalShaderMaterial.uniforms.time.value = elapsedTime;
 
       if (renderer.xr.isPresenting) {
-        // Direct WebXR Render Pass
         renderer.render(scene, camera);
       } else {
-        // Offscreen Render Pass for Desktop Preview
         renderer.setRenderTarget(renderTarget);
         renderer.render(scene, camera);
 
