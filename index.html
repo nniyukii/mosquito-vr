@@ -348,28 +348,29 @@
             scene = new THREE.Scene();
             camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setPixelRatio(1.0); // Keep pixel ratio 1.0 for VR performance
             renderer.xr.enabled = true;
             container.appendChild(renderer.domElement);
 
+            // Create low-resolution motion buffer texture canvas to save VRAM bandwidth
             prevCanvas = document.createElement('canvas');
-            prevCanvas.width = 256;
-            prevCanvas.height = 256;
-            prevCtx = prevCanvas.getContext('2d');
+            prevCanvas.width = 128;
+            prevCanvas.height = 128;
+            prevCtx = prevCanvas.getContext('2d', { alpha: false });
 
             // Setup simulated generator canvas
             simCanvas = document.createElement('canvas');
-            simCanvas.width = 512;
-            simCanvas.height = 512;
-            simCtx = simCanvas.getContext('2d');
+            simCanvas.width = 256;
+            simCanvas.height = 256;
+            simCtx = simCanvas.getContext('2d', { alpha: false });
 
             const placeholder = document.createElement('canvas');
             placeholder.width = 2;
             placeholder.height = 2;
             videoTexture = new THREE.CanvasTexture(placeholder);
-            previousVideoTexture = new THREE.CanvasTexture(placeholder);
+            previousVideoTexture = new THREE.CanvasTexture(prevCanvas);
 
             uniforms.u_texture.value = videoTexture;
             uniforms.u_prevTexture.value = previousVideoTexture;
@@ -438,11 +439,11 @@
             const targetDeviceId = deviceId || selectedDeviceId;
 
             let constraints = targetDeviceId 
-                ? { video: { deviceId: { exact: targetDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }
-                : { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
+                ? { video: { deviceId: { exact: targetDeviceId }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false }
+                : { video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false };
 
             try {
-                statusText.textContent = "Requesting Quest camera access...";
+                statusText.textContent = "Connecting to video stream...";
                 
                 try {
                     currentStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -453,6 +454,7 @@
                 video.srcObject = currentStream;
                 await video.play();
 
+                if (videoTexture) videoTexture.dispose();
                 videoTexture = new THREE.VideoTexture(video);
                 videoTexture.minFilter = THREE.LinearFilter;
                 videoTexture.magFilter = THREE.LinearFilter;
@@ -474,6 +476,7 @@
             permissionOverlay.classList.add('hidden');
             statusText.textContent = "Running Procedural Thermal Simulator Mode";
 
+            if (videoTexture) videoTexture.dispose();
             videoTexture = new THREE.CanvasTexture(simCanvas);
             uniforms.u_texture.value = videoTexture;
         }
@@ -490,7 +493,7 @@
             for (let i = 0; i < 3; i++) {
                 const x = w/2 + Math.sin(t + i * 2.0) * (w * 0.25);
                 const y = h/2 + Math.cos(t * 1.5 + i) * (h * 0.2);
-                const radius = 60 + Math.sin(t * 3.0 + i) * 15;
+                const radius = 40 + Math.sin(t * 3.0 + i) * 10;
 
                 const grad = simCtx.createRadialGradient(x, y, 5, x, y, radius);
                 grad.addColorStop(0, 'rgba(255, 230, 180, 1.0)');
@@ -515,11 +518,15 @@
                     if (supported) {
                         vrBtn.addEventListener('click', () => {
                             if (!renderer.xr.isPresenting) {
+                                // Optimized features payload for immediate Quest session initialization
                                 navigator.xr.requestSession('immersive-vr', {
-                                    optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers']
+                                    optionalFeatures: ['local-floor']
                                 }).then((session) => {
                                     renderer.xr.setSession(session);
-                                    statusText.textContent = "In VR Mode - Passthrough Active";
+                                    statusText.textContent = "In VR Mode - Presenting";
+                                }).catch((err) => {
+                                    console.error("VR Session launch error:", err);
+                                    statusText.textContent = "Failed to launch VR session.";
                                 });
                             }
                         });
@@ -539,6 +546,7 @@
 
         let lastBufferUpdate = 0;
         function updateMotionBuffer(time) {
+            // Rate limit texture canvas context uploads to 10fps for motion detection to prevent GPU locks in VR
             if (time - lastBufferUpdate > 100) {
                 if (isSimulatedMode) {
                     prevCtx.drawImage(simCanvas, 0, 0, prevCanvas.width, prevCanvas.height);
@@ -546,9 +554,7 @@
                     prevCtx.drawImage(video, 0, 0, prevCanvas.width, prevCanvas.height);
                 }
                 
-                if (previousVideoTexture) previousVideoTexture.dispose();
-                previousVideoTexture = new THREE.CanvasTexture(prevCanvas);
-                uniforms.u_prevTexture.value = previousVideoTexture;
+                previousVideoTexture.needsUpdate = true;
                 lastBufferUpdate = time;
             }
         }
