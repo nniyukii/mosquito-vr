@@ -96,7 +96,7 @@
                 </button>
                 <button id="vr-btn" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold px-4 py-2 rounded-xl text-xs md:text-sm flex items-center space-x-2 shadow-lg shadow-emerald-950/50 transition">
                     <i data-lucide="glasses" class="w-4 h-4"></i>
-                    <span>ENTER VR MODE</span>
+                    <span>ENTER PASSTHROUGH AR</span>
                 </button>
             </div>
         </div>
@@ -111,11 +111,12 @@
 
         <!-- Bottom Control Bar -->
         <div class="glass-panel rounded-2xl p-4 md:p-5 max-w-2xl w-full mx-auto pointer-events-auto shadow-2xl border border-slate-800">
-            <div class="flex items-center justify-between mb-4 border-b border-slate-800/80 pb-3">
-                <div class="flex items-center space-x-2">
-                    <i data-lucide="sliders" class="w-4 h-4 text-emerald-400"></i>
-                    <span class="text-xs font-bold uppercase tracking-wider text-slate-300">Compound Vision Parameters</span>
-                </div>
+            <div class="space-y-3">
+                <button id="start-cam-btn" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-emerald-500/20 transition flex items-center justify-center space-x-2 text-sm">
+                    <i data-lucide="camera" class="w-4 h-4"></i>
+                    <span>Enable Quest 2 Passthrough Feed</span>
+                </button>
+            </div>
                 <div class="flex items-center space-x-2">
                     <button id="preset-mosquito" class="text-[10px] px-2.5 py-1 rounded-lg bg-emerald-950/80 text-emerald-300 border border-emerald-800 hover:bg-emerald-900 transition">Mosquito</button>
                     <button id="preset-predator" class="text-[10px] px-2.5 py-1 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700 hover:bg-slate-700 transition">Full Thermal</button>
@@ -204,7 +205,6 @@
         const video = document.getElementById('webcam');
         const statusText = document.getElementById('status-text');
         const permissionOverlay = document.getElementById('permission-overlay');
-        const questHelp = document.getElementById('quest-help');
 
         let renderer, scene, camera, planeMesh;
         let videoTexture, previousVideoTexture;
@@ -213,10 +213,6 @@
         let selectedDeviceId = null;
         let availableVideoDevices = [];
         let currentStream = null;
-        let isSimulatedMode = false;
-
-        // Procedural thermal canvas fallback
-        let simCanvas, simCtx;
 
         const uniforms = {
             u_time: { value: 0 },
@@ -348,23 +344,17 @@
             scene = new THREE.Scene();
             camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-            renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+            renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(1.0); // Keep pixel ratio 1.0 for VR performance
+            renderer.setPixelRatio(1.0);
+            renderer.setClearColor(0x000000, 0);
             renderer.xr.enabled = true;
             container.appendChild(renderer.domElement);
 
-            // Create low-resolution motion buffer texture canvas to save VRAM bandwidth
             prevCanvas = document.createElement('canvas');
             prevCanvas.width = 128;
             prevCanvas.height = 128;
             prevCtx = prevCanvas.getContext('2d', { alpha: false });
-
-            // Setup simulated generator canvas
-            simCanvas = document.createElement('canvas');
-            simCanvas.width = 256;
-            simCanvas.height = 256;
-            simCtx = simCanvas.getContext('2d', { alpha: false });
 
             const placeholder = document.createElement('canvas');
             placeholder.width = 2;
@@ -379,7 +369,8 @@
             customMaterial = new THREE.ShaderMaterial({
                 vertexShader: vertexShader,
                 fragmentShader: fragmentShader,
-                uniforms: uniforms
+                uniforms: uniforms,
+                transparent: true
             });
 
             planeMesh = new THREE.Mesh(geometry, customMaterial);
@@ -397,21 +388,16 @@
                 const selectCam = document.getElementById('select-camera');
                 selectCam.innerHTML = '';
 
-                if (availableVideoDevices.length === 0) {
-                    selectCam.innerHTML = '<option value="">Default Camera</option>';
-                    return;
-                }
-
                 let preferredDeviceId = null;
                 availableVideoDevices.forEach((device, index) => {
                     const option = document.createElement('option');
                     option.value = device.deviceId;
-                    const label = device.label || `Camera ${index + 1}`;
+                    const label = device.label || `Quest External Camera ${index + 1}`;
                     option.textContent = label;
                     selectCam.appendChild(option);
 
                     const lowerLabel = label.toLowerCase();
-                    if (lowerLabel.includes('environment') || lowerLabel.includes('back') || lowerLabel.includes('passthrough') || lowerLabel.includes('rear')) {
+                    if (lowerLabel.includes('environment') || lowerLabel.includes('back') || lowerLabel.includes('rear') || lowerLabel.includes('camera 2')) {
                         preferredDeviceId = device.deviceId;
                     }
                 });
@@ -429,9 +415,6 @@
         }
 
         async function setupWebcam(deviceId = null) {
-            isSimulatedMode = false;
-            questHelp.classList.add('hidden');
-
             if (currentStream) {
                 currentStream.getTracks().forEach(track => track.stop());
             }
@@ -443,7 +426,7 @@
                 : { video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false };
 
             try {
-                statusText.textContent = "Connecting to video stream...";
+                statusText.textContent = "Connecting to Quest camera stream...";
                 
                 try {
                     currentStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -463,75 +446,35 @@
                 await initCameraDevices();
 
                 permissionOverlay.classList.add('hidden');
-                statusText.textContent = "Mosquito Thermal Vision Active. Tap ENTER VR to present in headset.";
+                statusText.textContent = "Mosquito Thermal Vision Active. Streaming live Quest camera feed.";
             } catch (err) {
                 console.error("Camera access error:", err);
-                questHelp.classList.remove('hidden');
-                statusText.textContent = "Camera access denied. Enable permissions or use test generator.";
+                statusText.textContent = "Camera access denied. Please allow camera permissions in Quest Browser.";
             }
-        }
-
-        function startSimulatedThermal() {
-            isSimulatedMode = true;
-            permissionOverlay.classList.add('hidden');
-            statusText.textContent = "Running Procedural Thermal Simulator Mode";
-
-            if (videoTexture) videoTexture.dispose();
-            videoTexture = new THREE.CanvasTexture(simCanvas);
-            uniforms.u_texture.value = videoTexture;
-        }
-
-        function drawProceduralThermal(time) {
-            const t = time * 0.002;
-            const w = simCanvas.width;
-            const h = simCanvas.height;
-
-            simCtx.fillStyle = '#050a15';
-            simCtx.fillRect(0, 0, w, h);
-
-            // Animated heat spots simulating human targets
-            for (let i = 0; i < 3; i++) {
-                const x = w/2 + Math.sin(t + i * 2.0) * (w * 0.25);
-                const y = h/2 + Math.cos(t * 1.5 + i) * (h * 0.2);
-                const radius = 40 + Math.sin(t * 3.0 + i) * 10;
-
-                const grad = simCtx.createRadialGradient(x, y, 5, x, y, radius);
-                grad.addColorStop(0, 'rgba(255, 230, 180, 1.0)');
-                grad.addColorStop(0.4, 'rgba(255, 80, 20, 0.8)');
-                grad.addColorStop(0.8, 'rgba(40, 180, 80, 0.3)');
-                grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-
-                simCtx.fillStyle = grad;
-                simCtx.beginPath();
-                simCtx.arc(x, y, radius, 0, Math.PI * 2);
-                simCtx.fill();
-            }
-
-            videoTexture.needsUpdate = true;
         }
 
         function setupVR() {
             const vrBtn = document.getElementById('vr-btn');
 
             if ('xr' in navigator) {
-                navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+                navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
                     if (supported) {
                         vrBtn.addEventListener('click', () => {
                             if (!renderer.xr.isPresenting) {
-                                // Optimized features payload for immediate Quest session initialization
-                                navigator.xr.requestSession('immersive-vr', {
-                                    optionalFeatures: ['local-floor']
+                                navigator.xr.requestSession('immersive-ar', {
+                                    optionalFeatures: ['dom-overlay'],
+                                    domOverlay: { root: document.body }
                                 }).then((session) => {
                                     renderer.xr.setSession(session);
-                                    statusText.textContent = "In VR Mode - Presenting";
+                                    statusText.textContent = "In Passthrough AR Mode - Thermal View Active";
                                 }).catch((err) => {
-                                    console.error("VR Session launch error:", err);
-                                    statusText.textContent = "Failed to launch VR session.";
+                                    console.error("AR Session launch error:", err);
+                                    statusText.textContent = "Failed to launch AR passthrough mode.";
                                 });
                             }
                         });
                     } else {
-                        vrBtn.textContent = "VR Unsupported";
+                        vrBtn.textContent = "Passthrough AR Unsupported";
                     }
                 });
             } else {
@@ -546,11 +489,8 @@
 
         let lastBufferUpdate = 0;
         function updateMotionBuffer(time) {
-            // Rate limit texture canvas context uploads to 10fps for motion detection to prevent GPU locks in VR
             if (time - lastBufferUpdate > 100) {
-                if (isSimulatedMode) {
-                    prevCtx.drawImage(simCanvas, 0, 0, prevCanvas.width, prevCanvas.height);
-                } else if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
                     prevCtx.drawImage(video, 0, 0, prevCanvas.width, prevCanvas.height);
                 }
                 
@@ -564,10 +504,6 @@
                 const sec = t * 0.001;
                 uniforms.u_time.value = sec;
 
-                if (isSimulatedMode) {
-                    drawProceduralThermal(t);
-                }
-
                 updateMotionBuffer(t);
 
                 renderer.render(scene, camera);
@@ -577,10 +513,6 @@
         function setupUIControls() {
             document.getElementById('start-cam-btn').addEventListener('click', () => {
                 setupWebcam();
-            });
-
-            document.getElementById('use-simulated-btn').addEventListener('click', () => {
-                startSimulatedThermal();
             });
 
             const bindSlider = (id, uniformKey, displayId) => {
